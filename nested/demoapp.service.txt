@@ -1,0 +1,15 @@
+[Unit]
+Description=nodejs-demoapp
+After=network.target
+
+[Service]
+User=labuser
+Environment=
+WorkingDirectory=/home/labuser/nodejs-demoapp
+ExecStart=/usr/bin/nodejs ./bin/www
+Restart=always
+RestartSec=500ms
+StartLimitInterval=0
+
+[Install]
+WantedBy=multi-user.target

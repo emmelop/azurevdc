@@ -1,0 +1,280 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "createVPNGateway": {
+            "defaultValue": true,
+            "type": "bool",
+            "metadata": {
+                "description": "Controls whether VPN gateways will be deployed"
+            }
+        }
+    },
+    "variables": {
+        "vnetUri": "[uri(deployment().properties.templateLink.uri, 'nested/vnet.json')]",
+        "spokeUri": "[uri(deployment().properties.templateLink.uri, 'nested/spoke.json')]",
+        "avsetUri": "[uri(deployment().properties.templateLink.uri, 'nested/avset.json')]",
+        "vpngwUri": "[uri(deployment().properties.templateLink.uri, 'nested/vpngw.json')]",
+        "vmUri": "[uri(deployment().properties.templateLink.uri, 'nested/vm.json')]",
+        "csrUri": "[uri(deployment().properties.templateLink.uri, 'nested/ciscoCSR.json')]",
+        "hub": {
+            "resourceGroup": "VDC-Hub",
+            "vnet": {
+                "name": "Hub-vnet",
+                "addressPrefixes": [  "10.101.0.0/16" ]
+            },
+            "subnets": [ 
+                { "addressPrefix": "10.101.0.0/24", "name": "GatewaySubnet" },
+                { "addressPrefix": "10.101.1.0/24", "name": "Hub-vnet-subnet1" },
+                { "addressPrefix": "10.101.2.0/24", "name": "Hub-vnet-subnet2" }
+            ],
+            "vpnGwName": "Hub-vpn-gw"
+        },
+        "onprem": {
+            "resourceGroup": "VDC-OnPrem",
+            "vnet": {
+                "name": "OnPrem-vnet",
+                "addressPrefixes": [  "10.102.0.0/16" ]
+            },
+            "subnets": [ 
+                { "addressPrefix": "10.102.0.0/24", "name": "GatewaySubnet" },
+                { "addressPrefix": "10.102.1.0/24", "name": "OnPrem-vnet-subnet1" },
+                { "addressPrefix": "10.102.2.0/24", "name": "OnPrem-vnet-subnet2" }
+            ],
+            "vpnGwName": "OnPrem-vpn-gw"
+        },
+        "spokes": [
+            {
+                "resourceGroup": "VDC-Spoke1",
+                "vnet": {
+                    "name": "Spoke1-vnet",
+                    "addressPrefixes": [  "10.1.0.0/16" ]
+                },
+                "subnets": [ 
+                    { "addressPrefix": "10.1.1.0/24", "name": "Spoke1-vnet-subnet1" },
+                    { "addressPrefix": "10.1.2.0/24", "name": "Spoke1-vnet-subnet2" }
+                ]
+            },
+            {
+                "resourceGroup": "VDC-Spoke2",
+                "vnet": {
+                    "name": "Spoke2-vnet",
+                    "addressPrefixes": [  "10.2.0.0/16" ]
+                },
+                "subnets": [
+                    { "addressPrefix": "10.2.1.0/24", "name": "Spoke2-vnet-subnet1" },
+                    { "addressPrefix": "10.2.2.0/24", "name": "Spoke2-vnet-subnet2" }
+                ]
+            }
+        ],
+        "nva": {
+            "resourceGroup": "VDC-NVA"
+        }
+    },
+    "resources": [
+        {
+            "comments": "Create Hub vNet",
+            "name": "Deploy-Hub-vNet",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('hub').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vnetUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vnet": {
+                        "value": "[variables('hub')]"
+                    }
+                }
+            }
+        },        
+        {
+            "comments": "Create OnPrem vNet",
+            "name": "Deploy-OnPrem-vNet",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('onprem').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vnetUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vnet": {
+                        "value": "[variables('onprem')]"
+                    }
+                }
+            }
+        },
+        {
+            "comments": "Serially loop through spokes array and deploy vNet and two way vNet peer",
+            "name": "[concat('Deploy-Spoke', copyIndex(1), '-vNet')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('spokes')[copyIndex()].resourceGroup]",
+            "dependsOn": [
+                "Deploy-Hub-vNet"
+            ],
+            "copy": {
+                "name": "spokes",
+                "count": "[length(variables('spokes'))]",
+                "mode": "Serial",
+                "batchSize": 1
+            },
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('spokeUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "hub": {
+                        "value": "[variables('hub')]"
+                    },
+                    "spoke": {
+                        "value": "[variables('spokes')[copyIndex()]]"
+                    }
+                }
+            }
+        },
+        {
+            "comments": "Create VPN Gateway in Hub-vnet",
+            "name": "Deploy-Hub-vpnGateway",
+            "condition": "[parameters('createVPNGateway')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('hub').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vpnGwUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vnetName": {
+                        "value": "[variables('hub').vnet.name]"
+                    },
+                    "vpnGwName": {
+                        "value": "[variables('hub').vpnGwName]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "Deploy-Hub-vNet"
+            ]
+        },
+        {
+            "comments": "Create VPN Gateway in OnPrem-vnet",
+            "name": "Deploy-OnPrem-vpnGateway",
+            "condition": "[parameters('createVPNGateway')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('onprem').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vpnGwUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vnetName": {
+                        "value": "[variables('onprem').vnet.name]"
+                    },
+                    "vpnGwName": {
+                        "value": "[variables('onprem').vpnGwName]"
+                    }
+                }
+            },
+            "dependsOn": [
+                "Deploy-OnPrem-vNet"
+            ]
+        },
+        {
+            "comments": "Create two VMs in an availability set with load balancing into first subnet in each spoke",
+            "name": "[concat('Deploy-Spoke', copyIndex(1), '-VMs')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('spokes')[copyIndex()].resourceGroup]",
+            "dependsOn": [
+                "[concat('Deploy-Spoke', copyIndex(1), '-vNet')]"
+            ],
+            "copy": {
+                "name": "spokes",
+                "count": "[length(variables('spokes'))]"
+            },
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('avsetUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vNetName": {
+                        "value": "[variables('spokes')[copyIndex()].vnet.name]"
+                    },
+                    "subnetName": {
+                        "value": "[variables('spokes')[copyIndex()].subnets[0].name]"
+                    },
+                    "prefix": {
+                        "value": "[concat('Spoke', copyIndex(1))]"
+                    }
+                }
+            }
+        },
+        {
+            "comments": "Create single VM in the on-premises vNet",
+            "name": "Deploy-OnPrem-VM",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('onprem').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vmUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vNetName": {
+                        "value": "[variables('onprem').vnet.name]"
+                    },
+                    "subnetName": {
+                        "value": "[variables('onprem').subnets[1].name]"
+                    },
+                    "vmName": {
+                        "value": "OnPrem-vm"
+                    },
+                    "script": {
+                        "value": "StandardOSUpgrade.sh"
+                    },
+                    "pip?": {
+                        "value": true
+                    }
+                }
+            },
+            "dependsOn": [
+                "Deploy-OnPrem-vNet"
+            ]
+        },
+        {
+            "comments": "Create Cisco CSR 1000v in the NVA vNet",
+            "name": "Deploy-Cisco-CSR-1000v",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "resourceGroup": "[variables('nva').resourceGroup]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('csrUri')]",
+                    "contentVersion": "1.0.0.0"
+                }
+            },
+            "dependsOn": [
+                "Deploy-Hub-vNet"
+            ]
+        }
+    ]
+}

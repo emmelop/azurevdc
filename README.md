@@ -1,0 +1,2 @@
+# azurevdc
+Azure Virtual Datacente

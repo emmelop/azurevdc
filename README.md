@@ -1,2 +1,2 @@
 # azurevdc
-Azure Virtual Datacente
+Azure Virtual Datacenter in a Day

@@ -184,7 +184,7 @@
                     "imageReference": {
                         "publisher": "cisco",
                         "offer": "cisco-csr-1000v",
-                        "sku": "16_6",
+                        "sku": "16_7",
                         "version": "latest"
                     },
                     "osDisk": {

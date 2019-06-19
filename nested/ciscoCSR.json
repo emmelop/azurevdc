@@ -162,7 +162,7 @@
             "name": "csr",
             "location": "[resourceGroup().location]",
             "plan": {
-                "name": "16_6",
+                "name": "16_7",
                 "publisher": "cisco",
                 "product": "cisco-csr-1000v"
             },
